@@ -10,8 +10,20 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 )
+
+// 已经处理过的程序
+var processedPrograms = map[string]bool{}
+
+// 关闭信号
+var closeCh = make(chan os.Signal, 1)
+
+// 已经启动的程序
+var startedPrograms = sync.Map{}
 
 func main() {
 	// 解析命令行参数
@@ -28,9 +40,6 @@ func main() {
 
 	// 启动程序
 	startPrograms(conf.Programs)
-
-	// 等待
-	select {}
 }
 
 // 解析命令行参数
@@ -86,10 +95,21 @@ func startPrograms(programs map[string]*ConfigProgram) {
 	for name := range programs {
 		startProgram(name, programs)
 	}
-}
 
-// 已经处理过的程序
-var processedPrograms = map[string]bool{}
+	// 等待关闭信号
+	signal.Notify(closeCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	sig := <-closeCh
+	log.Println("Close signal:", sig)
+
+	// 关闭所有程序
+	startedPrograms.Range(func(key, value any) bool {
+		name := key.(string)
+		cmd := value.(*exec.Cmd)
+		log.Println("Close program:", name)
+		fn.Loe(cmd.Process.Signal(sig))
+		return true
+	})
+}
 
 // 启动程序
 func startProgram(name string, programs map[string]*ConfigProgram) {
@@ -107,11 +127,11 @@ func startProgram(name string, programs map[string]*ConfigProgram) {
 		conf.SuccessFlag = map[string]string{}
 	}
 	command := fn.Poe1(shlex.Split(conf.Command))
+	errorSleepTime := 5 * time.Second
 
 	// 启动程序
 	ok := make(chan fn.Empty, 1)
 	go func() {
-		errorSleepTime := 5 * time.Second
 		for {
 			cmd := exec.Command(command[0], command[1:]...)
 			stdout := writer.NewWriter(name, os.Stdout, conf.SuccessFlag["stdout"])
@@ -139,6 +159,7 @@ func startProgram(name string, programs map[string]*ConfigProgram) {
 			} else {
 				log.Println("Program success[no check]:", name)
 			}
+			startedPrograms.Store(name, cmd)
 
 			if len(ok) == 0 {
 				ok <- fn.Empty{}
