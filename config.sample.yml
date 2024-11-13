@@ -1,0 +1,19 @@
+supervisor:
+  workdir: /tmp
+programs:
+  test2:
+    command: sh -c 'sleep 1 && echo OK && sleep 5'
+    success_flag:
+      stdout: OK
+    dependencies:
+      - test
+  test3:
+    command: sh -c 'sleep 1 && echo OK && sleep 5'
+    success_flag:
+      stdout: OK
+    dependencies:
+      - test2
+  test:
+    command: sh -c 'sleep 1 && echo OK && sleep 5'
+    success_flag:
+      - stdout: OK
